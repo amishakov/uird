@@ -272,7 +272,7 @@ rebuild() {
 			eval mksquashfs $SRC "${SAVETOMODULENAME}.new" -ef /tmp/$n/excludedfiles $SQFSOPT -wildcards $DEVNULL
 			if [ $? == 0 ]; then
 				echolog "[  ${green}OK${default}  ]" "$SAVETOMODULENAME  -- ${COMPLETE}."
-				[ -f "$SAVETOMODULENAME" ] && mv -f "$SAVETOMODULENAME" "${SAVETOMODULENAME}.bak"
+				[ -f "$SAVETOMODULENAME" ] && fbackup "$SAVETOMODULENAME"
 				mv -f "${SAVETOMODULENAME}.new" "$SAVETOMODULENAME"
 				chmod 400 "$SAVETOMODULENAME"
 			else
@@ -289,6 +289,16 @@ rebuild() {
 		fi
 	done
 }
+
+fbackup(){
+	if ! cp --help 2>&1 | grep -qi busybox && 
+		cp --reflink=always "$1" "${1}.bak" 2>/dev/null; then
+		rm -f "$1"
+		return 0
+	fi
+	mv -f "$1" "${1}.bak"
+}
+
 
 mkdir -p /tmp
 echolog "$SHTD_STARTED"
