@@ -77,12 +77,15 @@ wh_exclude() {
 banner() {
 	# $1 BALLOON_COLOR
 	# $2 BALLOON_SPEED
+	echo 0 > /proc/sys/kernel/printk 2>/dev/null
+	exec >/dev/null 2>&1
+
 	if plymouth --ping 2>/dev/null; then
 		plymouth --quit
-		[ -w /dev/console ] &&
-			(echo </dev/console >/dev/null 2>/dev/null) &&
-			exec </dev/console >>/dev/console 2>>/dev/console
 	fi
+
+	exec >/dev/console
+
 	echo -e $1
 	t=$2
 	if [ $COLUMNS ]; then
@@ -219,7 +222,6 @@ rebuild() {
 						mount -t aufs -o br:$SRC=rw:${UNION}-bundle=ro+wh aufs $UNION
 						SRC="$UNION"
 					elif [ "$MODE" = "mount" -a "$UNIONFS" = 'overlay' ]; then
-						#mount -t overlay -o redirect_dir=on,metacopy=off,index=on,lowerdir="${UNION}-bundle",upperdir="$SRC",workdir="$SRCWORK" overlay "$UNION"
 						mount -t overlay -o redirect_dir=on,metacopy=off,index=off,lowerdir="$SRC":"${UNION}-bundle" overlay "$UNION"
 						SRC="$UNION"
 					elif [ "$MODE" = "mount+wh" -a "$UNIONFS" = 'aufs' ]; then
@@ -273,7 +275,7 @@ rebuild() {
 			if [ $? == 0 ]; then
 				echolog "[  ${green}OK${default}  ]" "$SAVETOMODULENAME  -- ${COMPLETE}."
 				[ -f "$SAVETOMODULENAME" ] && fbackup "$SAVETOMODULENAME"
-				mv -f "${SAVETOMODULENAME}.new" "$SAVETOMODULENAME"
+				[ -f "${SAVETOMODULENAME}.new" ] && fmove "${SAVETOMODULENAME}.new" "$SAVETOMODULENAME"
 				chmod 400 "$SAVETOMODULENAME"
 			else
 				BALLOON_COLOR="$red"
@@ -290,21 +292,30 @@ rebuild() {
 	done
 }
 
+fmove(){
+	if command -v rsync >/dev/null 2>&1; then
+		if rsync -av --inplace --no-whole-file "$1" "$2"; then
+			rm -f "$1"
+			echolog "[  ${green}OK${default}  ]" "Backup module updated (reflink mode)"
+			return 0
+		fi
+	fi
+	mv -f "$1" "$2"
+	echolog "[  ${green}OK${default}  ]" "Backup module updated (simple mode)"
+}
+
 fbackup(){
-	if ! cp --help 2>&1 | grep -qi busybox && 
-		cp --reflink=always "$1" "${1}.bak" 2>/dev/null; then
-		rm -f "$1"
+	if ! cp --help 2>&1 | grep -qi busybox &&
+	   cp --reflink=always "$1" "${1}.bak" 2>/dev/null; then
 		return 0
 	fi
 	mv -f "$1" "${1}.bak"
 }
 
-
 mkdir -p /tmp
 echolog "$SHTD_STARTED"
 date >>/tmp/uird.shutdown.log
 
-# [ -f /oldroot/etc/initvars ] && . /oldroot/etc/initvars || BALLOON_COLOR="$red"
 [ -f /shutdown.cfg ] && . /shutdown.cfg || BALLOON_COLOR="$red"
 if ! [ -d "/oldroot$SYSMNT" ]; then
 	echolog "$NO_DIR /oldroot$SYSMNT "
@@ -364,5 +375,5 @@ done
 
 [ "$shell" = "yes" ] && shell_cmd 'shell'
 [ "$silent" = "no" ] && banner "$BALLOON_COLOR" "$BALLOON_SPEED"
-grep /dev/sd /proc/mounts && sleep 5
+grep /dev/sd /proc/mounts && sleep 3
 exit 0
